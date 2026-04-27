@@ -1,0 +1,392 @@
+{
+  "name": "RSG AI - Auto Social Posting (LinkedIn + IG + FB)",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    brand_name: 'RSG AI Automate',\n    website_url: 'https://www.rsg-ai.de/',\n    image_url: 'https://www.rsg-agent-services.de/og-image.jpg',\n    target_facebook_page: 'RSG AI Automate',\n    // Setze diese Werte in n8n vor dem Go-live (oder ersetze durch Credentials/Secrets):\n    meta_access_token: 'SET_ME_META_LONG_LIVED_TOKEN',\n    linkedin_access_token: 'SET_ME_LINKEDIN_ACCESS_TOKEN',\n    linkedin_org_urn: 'urn:li:organization:SET_ME',\n    timezone_label: 'Europe/Berlin'\n  }\n}];"
+      },
+      "id": "2",
+      "name": "Build Runtime Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $json;\nconst required = [\n  ['meta_access_token', 'SET_ME_META_LONG_LIVED_TOKEN'],\n  ['linkedin_access_token', 'SET_ME_LINKEDIN_ACCESS_TOKEN'],\n  ['linkedin_org_urn', 'urn:li:organization:SET_ME']\n];\n\nconst missing = required\n  .filter(([k, placeholder]) => !cfg[k] || cfg[k] === placeholder)\n  .map(([k]) => k);\n\nif (missing.length) {\n  throw new Error(`Konfiguration unvollständig. Bitte in \"Build Runtime Config\" setzen: ${missing.join(', ')}`);\n}\n\nreturn [{ json: cfg }];"
+      },
+      "id": "3",
+      "name": "Validate Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst weekday = now.toLocaleDateString('de-DE', { weekday: 'long' });\nconst cfg = $json;\n\nconst hooks = [\n  'Euer Vertrieb verbringt zu viel Zeit mit manuellen Aufgaben?',\n  'Was wäre, wenn euer Team täglich 2-3 Stunden zurückbekommt?',\n  'Go-Live in 2-4 Wochen: so startet KI-Automatisierung pragmatisch.',\n  'DSGVO-konforme KI-Agenten für B2B: so geht es in der Praxis.'\n];\n\nconst bodies = [\n  'Wir bauen und betreiben KI-Agenten für Sales, Support und Operations. Made in Germany, mit klarer Umsetzung statt Buzzwords.',\n  'RSG AI Automate automatisiert wiederkehrende B2B-Prozesse und entlastet Teams messbar im Tagesgeschäft.',\n  'Von Lead-Qualifizierung bis Support-Vorqualifizierung: KI-Agenten übernehmen repetitive Aufgaben 24/7.',\n  'Unsere Projekte sind auf schnelle Umsetzung ausgelegt: vom Kickoff bis produktiv in 2-4 Wochen.'\n];\n\nconst ctas = [\n  `Jetzt Agenten-Demo anfragen: ${cfg.website_url}`,\n  `Kostenlose Erstanalyse sichern: ${cfg.website_url}`,\n  `Mehr erfahren und Demo buchen: ${cfg.website_url}`\n];\n\nconst i = Math.floor(Math.random() * hooks.length);\nconst j = Math.floor(Math.random() * bodies.length);\nconst k = Math.floor(Math.random() * ctas.length);\n\nconst baseText = `${hooks[i]}\\n\\n${bodies[j]}\\n\\n${ctas[k]}`;\nconst fb_message = baseText;\nconst ig_caption = `${baseText}\\n\\n#KIAutomatisierung #B2B #Vertrieb #DSGVO #AIAgents #RSGAI`;\nconst linkedin_text = `${baseText}\\n\\n#KIAutomation #B2B #Digitalisierung`;\n\nreturn [{\n  json: {\n    ...cfg,\n    weekday,\n    generated_at: now.toISOString(),\n    fb_message,\n    ig_caption,\n    linkedin_text\n  }\n}];"
+      },
+      "id": "4",
+      "name": "Generate Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://graph.facebook.com/v22.0/me/accounts",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "id,name"
+            },
+            {
+              "name": "limit",
+              "value": "50"
+            },
+            {
+              "name": "access_token",
+              "value": "={{$json.meta_access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5",
+      "name": "Get FB Pages",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -380,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const pages = $json.data || [];\nconst base = $('Generate Content').first().json;\nconst desired = (base.target_facebook_page || '').toLowerCase();\nconst target = pages.find(p => (p.name || '').toLowerCase() === desired)\n  || pages.find(p => (p.name || '').toLowerCase().includes(desired))\n  || pages[0];\n\nif (!target) {\n  throw new Error('Keine Facebook-Seite gefunden. Prüfe Token/Scopes in Meta.');\n}\n\nreturn [{\n  json: {\n    ...base,\n    page_id: target.id,\n    page_name: target.name\n  }\n}];"
+      },
+      "id": "6",
+      "name": "Select Page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v22.0/{{$json.page_id}}/feed",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message",
+              "value": "={{$json.fb_message}}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{$json.meta_access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7",
+      "name": "Publish Facebook Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        80,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v22.0/{{$('Select Page').first().json.page_id}}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "instagram_business_account"
+            },
+            {
+              "name": "access_token",
+              "value": "={{$('Select Page').first().json.meta_access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8",
+      "name": "Get IG Business Account",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const igUserId = $json.instagram_business_account?.id;\nif (!igUserId) {\n  throw new Error('Keine instagram_business_account ID gefunden. IG Business mit FB-Seite verknüpfen.');\n}\nconst base = $('Select Page').first().json;\nreturn [{\n  json: {\n    ...base,\n    ig_user_id: igUserId\n  }\n}];"
+      },
+      "id": "9",
+      "name": "Prepare IG Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v22.0/{{$json.ig_user_id}}/media",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "image_url",
+              "value": "={{$json.image_url}}"
+            },
+            {
+              "name": "caption",
+              "value": "={{$json.ig_caption}}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{$json.meta_access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "10",
+      "name": "Create IG Media Container",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        780,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v22.0/{{$('Prepare IG Payload').first().json.ig_user_id}}/media_publish",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "creation_id",
+              "value": "={{$json.id}}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{$('Prepare IG Payload').first().json.meta_access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "11",
+      "name": "Publish IG Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1020,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.linkedin.com/v2/ugcPosts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.linkedin_access_token}}"
+            },
+            {
+              "name": "X-Restli-Protocol-Version",
+              "value": "2.0.0"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={\n  \"author\": $json.linkedin_org_urn,\n  \"lifecycleState\": \"PUBLISHED\",\n  \"specificContent\": {\n    \"com.linkedin.ugc.ShareContent\": {\n      \"shareCommentary\": {\n        \"text\": $json.linkedin_text\n      },\n      \"shareMediaCategory\": \"NONE\"\n    }\n  },\n  \"visibility\": {\n    \"com.linkedin.ugc.MemberNetworkVisibility\": \"PUBLIC\"\n  }\n}",
+        "options": {}
+      },
+      "id": "12",
+      "name": "Publish LinkedIn Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        80,
+        380
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Runtime Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Runtime Config": {
+      "main": [
+        [
+          {
+            "node": "Validate Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Config": {
+      "main": [
+        [
+          {
+            "node": "Generate Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Content": {
+      "main": [
+        [
+          {
+            "node": "Get FB Pages",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Publish LinkedIn Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get FB Pages": {
+      "main": [
+        [
+          {
+            "node": "Select Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Page": {
+      "main": [
+        [
+          {
+            "node": "Publish Facebook Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish Facebook Post": {
+      "main": [
+        [
+          {
+            "node": "Get IG Business Account",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get IG Business Account": {
+      "main": [
+        [
+          {
+            "node": "Prepare IG Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare IG Payload": {
+      "main": [
+        [
+          {
+            "node": "Create IG Media Container",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create IG Media Container": {
+      "main": [
+        [
+          {
+            "node": "Publish IG Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
